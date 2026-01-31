@@ -49,6 +49,8 @@ jobs:
         SC3_PUSH_KEY: ${{ secrets.SC3_PUSH_KEY }}
         WXPUSH_URL: ${{ secrets.WXPUSH_URL }}
         WXPUSH_TOKEN: ${{ secrets.WXPUSH_TOKEN }}
+        QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
+        QQ_EMAIL_SMTP_PASSWORD: ${{ secrets.QQ_EMAIL_SMTP_PASSWORD }}
       run: |
         # 智能随机执行：基于日期决定是否执行
         DATE_HASH=$(date +%d | md5sum | cut -c1-2)

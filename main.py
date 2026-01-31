@@ -9,6 +9,10 @@ import time
 import functools
 import sys
 import re
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.header import Header
 from loguru import logger
 from DrissionPage import ChromiumOptions, Chromium
 from tabulate import tabulate
@@ -61,6 +65,8 @@ GOTIFY_TOKEN = os.environ.get("GOTIFY_TOKEN")  # Gotify 应用的 API Token
 SC3_PUSH_KEY = os.environ.get("SC3_PUSH_KEY")  # Server酱³ SendKey
 WXPUSH_URL = os.environ.get("WXPUSH_URL")  # wxpush 服务器地址
 WXPUSH_TOKEN = os.environ.get("WXPUSH_TOKEN")  # wxpush 的 token
+QQ_EMAIL = os.environ.get("QQ_EMAIL")  # 接收通知的QQ邮箱
+QQ_EMAIL_SMTP_PASSWORD = os.environ.get("QQ_EMAIL_SMTP_PASSWORD")  # QQ邮箱SMTP授权码
 
 HOME_URL = "https://linux.do/"
 LOGIN_URL = "https://linux.do/login"
@@ -498,6 +504,93 @@ class LinuxDoBrowser:
                 logger.error(f"wxpush 推送失败: {str(e)}")
         else:
             logger.info("未配置 WXPUSH_URL 或 WXPUSH_TOKEN，跳过通知发送")
+
+        if QQ_EMAIL and QQ_EMAIL_SMTP_PASSWORD:
+            try:
+                self.send_qq_email(status_msg, stats_report)
+            except Exception as e:
+                logger.error(f"QQ邮件发送失败: {str(e)}")
+        else:
+            logger.info("未配置 QQ_EMAIL 或 QQ_EMAIL_SMTP_PASSWORD，跳过邮件通知")
+
+    def send_qq_email(self, status_msg, stats_report):
+        """发送QQ邮件通知"""
+        try:
+            # 邮件内容
+            subject = f"Linux.Do 自动签到报告 - {time.strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            # 构建HTML邮件内容
+            html_content = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: 'Microsoft YaHei', Arial, sans-serif; line-height: 1.6; }}
+                    .header {{ background: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                    .content {{ padding: 20px; }}
+                    .stats {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+                    .success {{ color: #4CAF50; }}
+                    .info {{ color: #2196F3; }}
+                    .footer {{ text-align: center; color: #666; padding: 20px; font-size: 12px; }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>🤖 Linux.Do 自动签到报告</h1>
+                    <p>{time.strftime('%Y年%m月%d日 %H:%M')}</p>
+                </div>
+                
+                <div class="content">
+                    <h2 class="success">✅ 执行状态</h2>
+                    <p><strong>{status_msg}</strong></p>
+                    
+                    <h2 class="info">📊 详细统计</h2>
+                    <div class="stats">
+                        <pre>{stats_report}</pre>
+                    </div>
+                    
+                    <h2>🔧 系统信息</h2>
+                    <ul>
+                        <li>用户名: {USERNAME}</li>
+                        <li>执行时间: {time.strftime('%Y-%m-%d %H:%M:%S')}</li>
+                        <li>浏览器: Chrome Headless</li>
+                        <li>平台: Linux (GitHub Actions)</li>
+                    </ul>
+                </div>
+                
+                <div class="footer">
+                    <p>📧 本邮件由 Linux.Do 自动签到脚本发送</p>
+                    <p>⏰ 下次执行时间: 随机时间段</p>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # 创建邮件对象
+            msg = MIMEMultipart('alternative')
+            msg['From'] = Header(f"Linux.Do签到机器人 <{QQ_EMAIL.split('@')[0]}@qq.com>")
+            msg['To'] = Header(f"用户 <{QQ_EMAIL}>")
+            msg['Subject'] = Header(subject, 'utf-8')
+            
+            # 添加HTML内容
+            html_part = MIMEText(html_content, 'html', 'utf-8')
+            msg.attach(html_part)
+            
+            # 连接QQ邮箱SMTP服务器
+            smtp = smtplib.SMTP_SSL('smtp.qq.com', 465)
+            smtp.set_debuglevel(0)  # 设置为1可查看SMTP交互日志
+            
+            # 登录SMTP服务器
+            smtp.login(QQ_EMAIL.split('@')[0] + '@qq.com', QQ_EMAIL_SMTP_PASSWORD)
+            
+            # 发送邮件
+            smtp.sendmail(QQ_EMAIL, QQ_EMAIL, msg.as_string())
+            smtp.quit()
+            
+            logger.success("QQ邮件发送成功!")
+            
+        except Exception as e:
+            logger.error(f"发送QQ邮件时出错: {str(e)}")
+            raise
 
 
 if __name__ == "__main__":

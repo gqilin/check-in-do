@@ -29,6 +29,8 @@
 - `SC3_PUSH_KEY`: Server酱³的SendKey
 - `WXPUSH_URL`: wxpush服务器地址
 - `WXPUSH_TOKEN`: wxpush的token
+- `QQ_EMAIL`: 接收通知的QQ邮箱地址
+- `QQ_EMAIL_SMTP_PASSWORD`: QQ邮箱SMTP授权码
 
 ### 3. 启用 Actions
 1. 进入仓库的 `Actions` 标签页
@@ -60,6 +62,28 @@ GOTIFY_TOKEN="your-application-token"
 WXPUSH_URL="https://your-wxpush-server.com"
 WXPUSH_TOKEN="your-authorization-token"
 ```
+
+### QQ邮箱 🆕 (推荐)
+1. **开启QQ邮箱SMTP服务**：
+   - 登录QQ邮箱 → 设置 → 账户 → POP3/SMTP服务
+   - 点击"开启"，按提示发送短信获取授权码
+2. **配置GitHub Secrets**：
+   - `QQ_EMAIL`: 你的QQ邮箱地址（如：123456789@qq.com）
+   - `QQ_EMAIL_SMTP_PASSWORD`: 获取的SMTP授权码（16位字符）
+
+**特点**：
+- 📧 美观的HTML邮件格式
+- 📊 详细的统计报告
+- 🔔 实时执行状态
+- 🎨 专业的邮件模板
+
+### QQ邮箱通知 🆕
+1. 开启QQ邮箱SMTP服务：
+   - 登录QQ邮箱 → 设置 → 账户 → POP3/SMTP服务
+   - 点击"开启"，获取授权码
+2. 添加到GitHub Secrets：
+   - `QQ_EMAIL`: 你的QQ邮箱地址
+   - `QQ_EMAIL_SMTP_PASSWORD`: QQ邮箱SMTP授权码（不是QQ密码！）
 
 ## 本地运行
 ```bash
