@@ -2,8 +2,15 @@ name: Linux.Do Daily Check-in (Production)
 
 on:
   schedule:
-    # 每天6:00, 12:00, 18:00, 00:00执行 (UTC+8时间)
-    - cron: '0 22,4,10,16 * * *'
+    # 多个随机时间点，更自然的分布 (UTC时间)
+    # 对应北京时间范围: 8-11点, 14-17点, 17-20点, 20-23点
+    - cron: '15 2 * * *'   # 北京时间 10:15
+    - cron: '45 3 * * *'   # 北京时间 11:45
+    - cron: '30 6 * * *'   # 北京时间 14:30
+    - cron: '15 8 * * *'   # 北京时间 16:15
+    - cron: '45 9 * * *'   # 北京时间 17:45
+    - cron: '30 12 * * *'  # 北京时间 20:30
+    - cron: '15 14 * * *'  # 北京时间 22:15
   workflow_dispatch: # 允许手动触发
 
 jobs:
@@ -53,7 +60,7 @@ jobs:
       run: |
         python test_env.py
         
-    - name: Run Linux.DO Check-in
+    - name: Run Linux.DO Check-in with Random Delay
       env:
         LINUXDO_USERNAME: ${{ secrets.LINUXDO_USERNAME }}
         LINUXDO_PASSWORD: ${{ secrets.LINUXDO_PASSWORD }}
@@ -64,6 +71,6 @@ jobs:
         WXPUSH_URL: ${{ secrets.WXPUSH_URL }}
         WXPUSH_TOKEN: ${{ secrets.WXPUSH_TOKEN }}
       run: |
-        echo "Starting check-in script..."
-        python main.py
+        echo "Starting check-in script with random delay..."
+        python random_delay_main.py
       continue-on-error: true

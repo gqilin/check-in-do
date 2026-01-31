@@ -1,0 +1,80 @@
+name: Linux.Do Smart Random Check-in
+
+on:
+  schedule:
+    # 分散在不同时间点，每天只会执行其中几个
+    # UTC时间，对应北京时间+8小时
+    - cron: '23 1 * * *'    # 北京时间 9:23
+    - cron: '47 3 * * *'    # 北京时间 11:47
+    - cron: '31 6 * * *'    # 北京时间 14:31
+    - cron: '19 8 * * *'    # 北京时间 16:19
+    - cron: '53 10 * * *'   # 北京时间 18:53
+    - cron: '27 12 * * *'   # 北京时间 20:27
+    - cron: '41 14 * * *'   # 北京时间 22:41
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  check-in:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+        
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Smart Random Check-in
+      env:
+        LINUXDO_USERNAME: ${{ secrets.LINUXDO_USERNAME }}
+        LINUXDO_PASSWORD: ${{ secrets.LINUXDO_PASSWORD }}
+        BROWSE_ENABLED: ${{ secrets.BROWSE_ENABLED || 'true' }}
+        GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
+        GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
+        SC3_PUSH_KEY: ${{ secrets.SC3_PUSH_KEY }}
+        WXPUSH_URL: ${{ secrets.WXPUSH_URL }}
+        WXPUSH_TOKEN: ${{ secrets.WXPUSH_TOKEN }}
+      run: |
+        # 智能随机执行：基于日期决定是否执行
+        DATE_HASH=$(date +%d | md5sum | cut -c1-2)
+        CURRENT_HOUR=$(date +%H)
+        
+        echo "日期哈希: $DATE_HASH"
+        echo "当前小时(UTC): $CURRENT_HOUR"
+        
+        # 将十六进制转换为十进制，然后决定是否执行
+        # 这样每天会随机执行2-3个时间点
+        EXEC_PROB=$((0x$DATE_HASH % 100))
+        
+        echo "执行概率: $EXEC_PROB%"
+        
+        # 35%的概率执行（约每天2-3次）
+        if [ $EXEC_PROB -lt 35 ]; then
+          echo "🎲 今天这个时间点执行签到"
+          
+          # 额外的随机延迟
+          RANDOM_DELAY=$((RANDOM % 1800))  # 0-30分钟的随机延迟
+          echo "⏱️ 额外随机延迟: $((RANDOM_DELAY / 60))分$((RANDOM_DELAY % 60))秒"
+          sleep $RANDOM_DELAY
+          
+          echo "🚀 开始执行签到脚本..."
+          python main.py
+        else
+          echo "😴 今天这个时间点跳过执行"
+        fi
+      continue-on-error: true
