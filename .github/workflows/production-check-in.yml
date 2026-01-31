@@ -53,13 +53,6 @@ jobs:
         echo "PASSWORD is set: ${{ secrets.LINUXDO_PASSWORD != '' }}"
         echo "BROWSE_ENABLED: ${{ secrets.BROWSE_ENABLED || 'true' }}"
         
-    - name: Test environment
-      env:
-        LINUXDO_USERNAME: ${{ secrets.LINUXDO_USERNAME }}
-        LINUXDO_PASSWORD: ${{ secrets.LINUXDO_PASSWORD }}
-      run: |
-        python test_env.py
-        
     - name: Run Linux.DO Check-in with Random Delay
       env:
         LINUXDO_USERNAME: ${{ secrets.LINUXDO_USERNAME }}
