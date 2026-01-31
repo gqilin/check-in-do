@@ -137,10 +137,59 @@ class LinuxDoBrowser:
             "X-Requested-With": "XMLHttpRequest",
             "Referer": LOGIN_URL,
         }
-        resp_csrf = self.session.get(CSRF_URL, headers=headers, impersonate="chrome120")
-        csrf_data = resp_csrf.json()
-        csrf_token = csrf_data.get("csrf")
-        logger.info(f"CSRF Token obtained: {csrf_token[:10]}...")
+        # 尝试多种方法获取CSRF token
+        csrf_token = None
+        
+        # 方法1: 尝试不同的impersonate版本
+        for version in ["chrome120", "chrome110", "chrome100", "firefox109"]:
+            try:
+                logger.info(f"尝试使用 {version} 模拟...")
+                resp_csrf = self.session.get(CSRF_URL, headers=headers, impersonate=version, timeout=15)
+                
+                logger.info(f"{version} 响应状态码: {resp_csrf.status_code}")
+                
+                if resp_csrf.status_code == 200 and resp_csrf.text.strip():
+                    try:
+                        csrf_data = resp_csrf.json()
+                        csrf_token = csrf_data.get("csrf")
+                        if csrf_token:
+                            logger.info(f"使用 {version} 成功获取CSRF Token: {csrf_token[:10]}...")
+                            break
+                    except:
+                        pass
+                
+                # 检查是否是Cloudflare页面
+                if "Just a moment" in resp_csrf.text:
+                    logger.warning(f"{version} 被Cloudflare拦截")
+                elif resp_csrf.status_code != 200:
+                    logger.warning(f"{version} 返回状态码: {resp_csrf.status_code}")
+                    
+            except Exception as e:
+                logger.warning(f"{version} 请求失败: {str(e)}")
+                continue
+        
+        if not csrf_token:
+            # 方法2: 使用DrissionPage直接获取
+            logger.info("尝试使用DrissionPage获取CSRF...")
+            try:
+                self.page.get(LOGIN_URL)
+                time.sleep(3)
+                
+                # 尝试从页面中提取CSRF
+                csrf_script = self.page.ele('script:contains("csrfToken")', timeout=2)
+                if csrf_script:
+                    script_text = csrf_script.text
+                    import re
+                    match = re.search(r'csrfToken["\']?\s*[:=]\s*["\']([^"\']+)["\']', script_text)
+                    if match:
+                        csrf_token = match.group(1)
+                        logger.info(f"从页面提取CSRF Token: {csrf_token[:10]}...")
+            except Exception as e:
+                logger.error(f"DrissionPage方法失败: {str(e)}")
+        
+        if not csrf_token:
+            logger.error("所有方法都无法获取CSRF token")
+            return False
 
         # Step 2: Login
         logger.info("正在登录...")
