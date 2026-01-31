@@ -128,67 +128,78 @@ class LinuxDoBrowser:
 
     def login(self):
         logger.info("开始登录")
-        # Step 1: Get CSRF Token
-        logger.info("获取 CSRF token...")
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": LOGIN_URL,
-        }
-        # 尝试多种方法获取CSRF token
-        csrf_token = None
         
-        # 方法1: 尝试不同的impersonate版本
-        for version in ["chrome120", "chrome110", "chrome100", "firefox109"]:
-            try:
-                logger.info(f"尝试使用 {version} 模拟...")
-                resp_csrf = self.session.get(CSRF_URL, headers=headers, impersonate=version, timeout=15)
+        # 由于Cloudflare保护，直接使用DrissionPage进行完整登录流程
+        logger.info("使用DrissionPage进行完整登录流程...")
+        
+        try:
+            # 直接访问登录页面
+            logger.info("访问登录页面...")
+            self.page.get(LOGIN_URL)
+            time.sleep(3)
+            
+            # 等待页面加载完成，等待Cloudflare验证
+            logger.info("等待页面加载完成...")
+            time.sleep(5)
+            
+            # 查找用户名输入框
+            logger.info("查找登录表单...")
+            username_input = self.page.ele('#login-account-name', timeout=10)
+            if not username_input:
+                logger.error("未找到用户名输入框")
+                return False
                 
-                logger.info(f"{version} 响应状态码: {resp_csrf.status_code}")
-                
-                if resp_csrf.status_code == 200 and resp_csrf.text.strip():
-                    try:
-                        csrf_data = resp_csrf.json()
-                        csrf_token = csrf_data.get("csrf")
-                        if csrf_token:
-                            logger.info(f"使用 {version} 成功获取CSRF Token: {csrf_token[:10]}...")
-                            break
-                    except:
-                        pass
-                
-                # 检查是否是Cloudflare页面
-                if "Just a moment" in resp_csrf.text:
-                    logger.warning(f"{version} 被Cloudflare拦截")
-                elif resp_csrf.status_code != 200:
-                    logger.warning(f"{version} 返回状态码: {resp_csrf.status_code}")
+            password_input = self.page.ele('#login-account-password', timeout=5)
+            if not password_input:
+                logger.error("未找到密码输入框")
+                return False
+            
+            # 输入用户名和密码
+            logger.info("输入登录信息...")
+            self.page.actions.click(username_input).input(USERNAME)
+            time.sleep(1)
+            self.page.actions.click(password_input).input(PASSWORD)
+            time.sleep(1)
+            
+            # 查找并点击登录按钮
+            login_button = self.page.ele('.btn.btn-primary.btn-large', timeout=5)
+            if not login_button:
+                # 尝试其他选择器
+                login_button = self.page.ele('button[type=submit]', timeout=5)
+                if not login_button:
+                    # 尝试通过文本查找
+                    login_button = self.page.ele('text=登录', timeout=5)
+            
+            if not login_button:
+                logger.error("未找到登录按钮")
+                return False
+            
+            logger.info("点击登录按钮...")
+            self.page.actions.click(login_button)
+            time.sleep(5)
+            
+            # 检查登录是否成功
+            logger.info("检查登录状态...")
+            self.page.get(HOME_URL)
+            time.sleep(3)
+            
+            # 检查是否登录成功
+            user_ele = self.page.ele("@id=current-user", timeout=10)
+            if user_ele:
+                logger.info("✅ 登录成功!")
+                return True
+            else:
+                # 检查是否有avatar元素
+                if "avatar" in self.page.html:
+                    logger.info("✅ 登录成功 (通过avatar检测)")
+                    return True
+                else:
+                    logger.error("❌ 登录失败 - 未找到用户元素")
+                    logger.info(f"当前URL: {self.page.url}")
+                    return False
                     
-            except Exception as e:
-                logger.warning(f"{version} 请求失败: {str(e)}")
-                continue
-        
-        if not csrf_token:
-            # 方法2: 使用DrissionPage直接获取
-            logger.info("尝试使用DrissionPage获取CSRF...")
-            try:
-                self.page.get(LOGIN_URL)
-                time.sleep(3)
-                
-                # 尝试从页面中提取CSRF
-                csrf_script = self.page.ele('script:contains("csrfToken")', timeout=2)
-                if csrf_script:
-                    script_text = csrf_script.text
-                    import re
-                    match = re.search(r'csrfToken["\']?\s*[:=]\s*["\']([^"\']+)["\']', script_text)
-                    if match:
-                        csrf_token = match.group(1)
-                        logger.info(f"从页面提取CSRF Token: {csrf_token[:10]}...")
-            except Exception as e:
-                logger.error(f"DrissionPage方法失败: {str(e)}")
-        
-        if not csrf_token:
-            logger.error("所有方法都无法获取CSRF token")
+        except Exception as e:
+            logger.error(f"登录过程中出错: {str(e)}")
             return False
 
         # Step 2: Login
@@ -424,8 +435,10 @@ class LinuxDoBrowser:
         try:
             logger.info("🚀 开始执行签到任务")
             login_res = self.login()
-            if not login_res:  # 登录
-                logger.warning("登录验证失败")
+            if not login_res:
+                logger.error("❌ 登录失败，跳过浏览任务")
+                self.send_notifications(False)  # 发送失败通知
+                return
 
             if BROWSE_ENABLED:
                 browse_start = time.time()
@@ -434,17 +447,18 @@ class LinuxDoBrowser:
                 logger.info(f"⏱️ 浏览耗时: {browse_time:.1f} 秒")
                 
                 if not click_topic_res:
-                    logger.error("点击主题失败，程序终止")
-                    return
-                logger.info("✅ 完成浏览任务")
+                    logger.warning("浏览任务失败，但签到已完成")
+                else:
+                    logger.info("✅ 完成浏览任务")
 
-            self.send_notifications(BROWSE_ENABLED)  # 发送通知
+            self.send_notifications(BROWSE_ENABLED and login_res)  # 发送通知
             
             total_time = time.time() - start_time
             logger.info(f"🏁 总执行时间: {total_time:.1f} 秒")
             
         except Exception as e:
             logger.error(f"❌ 执行过程中出错: {str(e)}")
+            self.send_notifications(False)  # 发送失败通知
             raise
         finally:
             try:
