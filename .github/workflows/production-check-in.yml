@@ -63,7 +63,16 @@ jobs:
         SC3_PUSH_KEY: ${{ secrets.SC3_PUSH_KEY }}
         WXPUSH_URL: ${{ secrets.WXPUSH_URL }}
         WXPUSH_TOKEN: ${{ secrets.WXPUSH_TOKEN }}
+        QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
+        QQ_EMAIL_SMTP_PASSWORD: ${{ secrets.QQ_EMAIL_SMTP_PASSWORD }}
+      timeout-minutes: 15
       run: |
         echo "Starting check-in script with random delay..."
+        echo "Environment variables loaded:"
+        echo "- USERNAME: ${{ secrets.LINUXDO_USERNAME != '' && '***' || 'NOT_SET' }}"
+        echo "- PASSWORD: ${{ secrets.LINUXDO_PASSWORD != '' && '***' || 'NOT_SET' }}"
+        echo "- BROWSE_ENABLED: ${{ secrets.BROWSE_ENABLED || 'true' }}"
+        echo "- GOTIFY: ${{ secrets.GOTIFY_URL != '' && 'CONFIGURED' || 'NOT_SET' }}"
+        echo "- QQ_EMAIL: ${{ secrets.QQ_EMAIL != '' && 'CONFIGURED' || 'NOT_SET' }}"
         python random_delay_main.py
       continue-on-error: true

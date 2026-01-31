@@ -92,6 +92,16 @@ class LinuxDoBrowser:
             .headless(True)
             .incognito(True)
             .set_argument("--no-sandbox")
+            .set_argument("--disable-dev-shm-usage")
+            .set_argument("--disable-gpu")
+            .set_argument("--disable-software-rasterizer")
+            .set_argument("--disable-background-timer-throttling")
+            .set_argument("--disable-backgrounding-occluded-windows")
+            .set_argument("--disable-renderer-backgrounding")
+            .set_argument("--disable-features=TranslateUI")
+            .set_argument("--disable-ipc-flooding-protection")
+            .set_argument("--disable-web-security")
+            .set_argument("--disable-features=VizDisplayCompositor")
         )
         co.set_user_agent(
             f"Mozilla/5.0 ({platformIdentifier}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -222,18 +232,17 @@ class LinuxDoBrowser:
             logger.error("未找到主题帖")
             return False
         
-        # 根据可用帖子数量动态调整，目标每天阅读1000个
+        # 在CI环境中减少阅读数量，优化执行时间
         available_count = len(topic_list)
         self.stats['total_topics'] = available_count
         
-        # 如果每天执行3次，每次需要阅读约333个帖子
-        # 设置为可用帖子的50%-80%，确保多样性
-        if available_count <= 50:
-            target_count = min(available_count, 25)
-        elif available_count <= 100:
-            target_count = random.randint(int(available_count * 0.4), int(available_count * 0.6))
+        # CI环境下的阅读策略：大幅减少阅读数量
+        if available_count <= 10:
+            target_count = random.randint(2, min(available_count, 5))
+        elif available_count <= 20:
+            target_count = random.randint(3, 8)
         else:
-            target_count = random.randint(int(available_count * 0.5), int(available_count * 0.8))
+            target_count = random.randint(5, 12)  # 最多阅读12个帖子
         
         logger.info(f"发现 {available_count} 个主题帖，随机选择 {target_count} 个进行阅读")
         selected_topics = random.sample(topic_list, target_count)
@@ -286,20 +295,17 @@ class LinuxDoBrowser:
         prev_url = None
         scroll_count = 0
         
-        # 增加滚动次数，更深入地浏览帖子内容
-        max_scrolls = random.randint(15, 25)  # 增加到15-25次滚动
+        # 在CI环境中使用更快速的浏览策略
+        max_scrolls = random.randint(5, 10)  # 减少到5-10次滚动
         
-        # 随机决定浏览策略
-        browse_strategy = random.choice(['quick', 'normal', 'deep'])
+        # 随机决定浏览策略 - 优化为CI环境友好
+        browse_strategy = random.choice(['quick', 'fast'])
         if browse_strategy == 'quick':
-            max_scrolls = random.randint(8, 12)
-            wait_range = (1, 3)
-        elif browse_strategy == 'normal':
-            max_scrolls = random.randint(15, 25)
-            wait_range = (2, 5)
-        else:  # deep
-            max_scrolls = random.randint(25, 35)
-            wait_range = (3, 7)
+            max_scrolls = random.randint(3, 6)
+            wait_range = (0.5, 1.5)
+        else:  # fast
+            max_scrolls = random.randint(5, 10)
+            wait_range = (1, 2)
         
         logger.info(f"浏览策略: {browse_strategy}, 最大滚动次数: {max_scrolls}")
         
@@ -363,19 +369,34 @@ class LinuxDoBrowser:
         self.stats['scroll_actions'] += scroll_count + 1
 
     def run(self):
+        import time
+        start_time = time.time()
+        
         try:
+            logger.info("🚀 开始执行签到任务")
             login_res = self.login()
             if not login_res:  # 登录
                 logger.warning("登录验证失败")
 
             if BROWSE_ENABLED:
+                browse_start = time.time()
                 click_topic_res = self.click_topic()  # 点击主题
+                browse_time = time.time() - browse_start
+                logger.info(f"⏱️ 浏览耗时: {browse_time:.1f} 秒")
+                
                 if not click_topic_res:
                     logger.error("点击主题失败，程序终止")
                     return
-                logger.info("完成浏览任务")
+                logger.info("✅ 完成浏览任务")
 
             self.send_notifications(BROWSE_ENABLED)  # 发送通知
+            
+            total_time = time.time() - start_time
+            logger.info(f"🏁 总执行时间: {total_time:.1f} 秒")
+            
+        except Exception as e:
+            logger.error(f"❌ 执行过程中出错: {str(e)}")
+            raise
         finally:
             try:
                 self.page.close()
