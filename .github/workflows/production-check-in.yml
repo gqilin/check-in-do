@@ -1,4 +1,4 @@
-name: Linux.Do Daily Check-in
+name: Linux.Do Daily Check-in (Production)
 
 on:
   schedule:
@@ -18,6 +18,11 @@ jobs:
       with:
         python-version: '3.10'
         
+    - name: Check Python version
+      run: |
+        python --version
+        pip --version
+        
     - name: Install system dependencies
       run: |
         sudo apt-get update
@@ -29,8 +34,17 @@ jobs:
         
     - name: Install Python dependencies
       run: |
+        echo "Installing requirements..."
         pip install --upgrade pip
         pip install -r requirements.txt
+        echo "Installed packages:"
+        pip list
+        
+    - name: Debug environment variables
+      run: |
+        echo "USERNAME is set: ${{ secrets.LINUXDO_USERNAME != '' }}"
+        echo "PASSWORD is set: ${{ secrets.LINUXDO_PASSWORD != '' }}"
+        echo "BROWSE_ENABLED: ${{ secrets.BROWSE_ENABLED || 'true' }}"
         
     - name: Test environment
       env:
@@ -50,5 +64,6 @@ jobs:
         WXPUSH_URL: ${{ secrets.WXPUSH_URL }}
         WXPUSH_TOKEN: ${{ secrets.WXPUSH_TOKEN }}
       run: |
+        echo "Starting check-in script..."
         python main.py
       continue-on-error: true
