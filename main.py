@@ -100,6 +100,15 @@ class LinuxDoBrowser:
                 "Accept-Language": "zh-CN,zh;q=0.9",
             }
         )
+        
+        # 添加统计变量
+        self.stats = {
+            'total_topics': 0,
+            'successful_likes': 0,
+            'failed_likes': 0,
+            'scroll_actions': 0,
+            'browse_time': 0
+        }
 
     def login(self):
         logger.info("开始登录")
@@ -206,9 +215,42 @@ class LinuxDoBrowser:
         if not topic_list:
             logger.error("未找到主题帖")
             return False
-        logger.info(f"发现 {len(topic_list)} 个主题帖，随机选择10个")
-        for topic in random.sample(topic_list, 10):
-            self.click_one_topic(topic.attr("href"))
+        
+        # 根据可用帖子数量动态调整，目标每天阅读1000个
+        available_count = len(topic_list)
+        self.stats['total_topics'] = available_count
+        
+        # 如果每天执行3次，每次需要阅读约333个帖子
+        # 设置为可用帖子的50%-80%，确保多样性
+        if available_count <= 50:
+            target_count = min(available_count, 25)
+        elif available_count <= 100:
+            target_count = random.randint(int(available_count * 0.4), int(available_count * 0.6))
+        else:
+            target_count = random.randint(int(available_count * 0.5), int(available_count * 0.8))
+        
+        logger.info(f"发现 {available_count} 个主题帖，随机选择 {target_count} 个进行阅读")
+        selected_topics = random.sample(topic_list, target_count)
+        
+        # 记录实际阅读数量
+        self.stats['topics_read'] = target_count
+        
+        # 分批处理，避免同时打开太多标签页
+        batch_size = 10
+        for i in range(0, len(selected_topics), batch_size):
+            batch = selected_topics[i:i + batch_size]
+            logger.info(f"处理第 {i//batch_size + 1} 批，共 {len(batch)} 个帖子")
+            
+            for topic in batch:
+                self.click_one_topic(topic.attr("href"))
+            
+            # 每批之间短暂休息，模拟真实用户行为
+            if i + batch_size < len(selected_topics):
+                rest_time = random.uniform(5, 15)
+                logger.info(f"批次间休息 {rest_time:.1f} 秒...")
+                time.sleep(rest_time)
+        
+        logger.info(f"✅ 本轮完成阅读 {target_count} 个帖子")
         return True
 
     @retry_decorator()
@@ -216,8 +258,17 @@ class LinuxDoBrowser:
         new_page = self.browser.new_tab()
         try:
             new_page.get(topic_url)
-            if random.random() < 0.3:  # 0.3 * 30 = 9
+            
+            # 增加点赞概率，提升到40-60%
+            like_probability = random.uniform(0.4, 0.6)
+            if random.random() < like_probability:
                 self.click_like(new_page)
+            
+            # 30%的概率进行多次点赞（如果有多个可点赞的内容）
+            if random.random() < 0.3:
+                time.sleep(random.uniform(2, 4))
+                self.click_like(new_page)
+            
             self.browse_post(new_page)
         finally:
             try:
@@ -227,21 +278,52 @@ class LinuxDoBrowser:
 
     def browse_post(self, page):
         prev_url = None
-        # 开始自动滚动，最多滚动10次
-        for _ in range(10):
-            # 随机滚动一段距离
-            scroll_distance = random.randint(550, 650)  # 随机滚动 550-650 像素
+        scroll_count = 0
+        
+        # 增加滚动次数，更深入地浏览帖子内容
+        max_scrolls = random.randint(15, 25)  # 增加到15-25次滚动
+        
+        # 随机决定浏览策略
+        browse_strategy = random.choice(['quick', 'normal', 'deep'])
+        if browse_strategy == 'quick':
+            max_scrolls = random.randint(8, 12)
+            wait_range = (1, 3)
+        elif browse_strategy == 'normal':
+            max_scrolls = random.randint(15, 25)
+            wait_range = (2, 5)
+        else:  # deep
+            max_scrolls = random.randint(25, 35)
+            wait_range = (3, 7)
+        
+        logger.info(f"浏览策略: {browse_strategy}, 最大滚动次数: {max_scrolls}")
+        
+        for scroll_count in range(max_scrolls):
+            # 更大的滚动距离范围，模拟不同浏览速度
+            if browse_strategy == 'quick':
+                scroll_distance = random.randint(800, 1200)
+            elif browse_strategy == 'normal':
+                scroll_distance = random.randint(550, 650)
+            else:  # deep
+                scroll_distance = random.randint(300, 500)
+            
             logger.info(f"向下滚动 {scroll_distance} 像素...")
             page.run_js(f"window.scrollBy(0, {scroll_distance})")
-            logger.info(f"已加载页面: {page.url}")
+            
+            # 随机向上滚动一下，模拟回看内容
+            if scroll_count > 3 and random.random() < 0.15:
+                up_scroll = random.randint(-200, -100)
+                page.run_js(f"window.scrollBy(0, {up_scroll})")
+                logger.info(f"向上滚动 {abs(up_scroll)} 像素，回看内容")
 
-            if random.random() < 0.03:  # 33 * 4 = 132
+            # 降低早期退出概率，让浏览更充分
+            early_exit_prob = 0.01 if browse_strategy == 'deep' else (0.02 if browse_strategy == 'normal' else 0.03)
+            if random.random() < early_exit_prob:
                 logger.success("随机退出浏览")
                 break
 
             # 检查是否到达页面底部
             at_bottom = page.run_js(
-                "window.scrollY + window.innerHeight >= document.body.scrollHeight"
+                "window.scrollY + window.innerHeight >= document.body.scrollHeight - 100"
             )
             current_url = page.url
             if current_url != prev_url:
@@ -250,10 +332,29 @@ class LinuxDoBrowser:
                 logger.success("已到达页面底部，退出浏览")
                 break
 
-            # 动态随机等待
-            wait_time = random.uniform(2, 4)  # 随机等待 2-4 秒
+            # 根据策略调整等待时间
+            wait_time = random.uniform(*wait_range)
+            self.stats['scroll_actions'] += 1
+            self.stats['browse_time'] += wait_time
+            
             logger.info(f"等待 {wait_time:.2f} 秒...")
             time.sleep(wait_time)
+            
+            # 偶尔模拟点击相关链接或展开内容
+            if scroll_count > 5 and random.random() < 0.1:
+                try:
+                    # 尝试点击一些展开链接
+                    expand_links = page.eles("text=展开", timeout=2)
+                    if expand_links:
+                        random.choice(expand_links).click()
+                        logger.info("点击展开链接")
+                        self.stats['browse_time'] += random.uniform(1, 2)
+                        time.sleep(random.uniform(1, 2))
+                except:
+                    pass
+        
+        logger.info(f"帖子浏览完成，共滚动 {scroll_count + 1} 次")
+        self.stats['scroll_actions'] += scroll_count + 1
 
     def run(self):
         try:
@@ -286,11 +387,14 @@ class LinuxDoBrowser:
             if like_button:
                 logger.info("找到未点赞的帖子，准备点赞")
                 like_button.click()
+                self.stats['successful_likes'] += 1
                 logger.info("点赞成功")
                 time.sleep(random.uniform(1, 2))
             else:
                 logger.info("帖子可能已经点过赞了")
+                self.stats['successful_likes'] += 1  # 也算成功，因为已经点赞
         except Exception as e:
+            self.stats['failed_likes'] += 1
             logger.error(f"点赞失败: {str(e)}")
 
     def print_connect_info(self):
@@ -317,9 +421,24 @@ class LinuxDoBrowser:
         print(tabulate(info, headers=["项目", "当前", "要求"], tablefmt="pretty"))
 
     def send_notifications(self, browse_enabled):
+        # 生成统计报告
+        stats_report = f"\n📊 本次执行统计:\n"
+        stats_report += f"📝 发现主题: {self.stats['total_topics']} 个\n"
+        stats_report += f"👍 成功点赞: {self.stats['successful_likes']} 次\n"
+        stats_report += f"❌ 点赞失败: {self.stats['failed_likes']} 次\n"
+        stats_report += f"📜 滚动操作: {self.stats['scroll_actions']} 次\n"
+        stats_report += f"⏱️ 浏览时长: {self.stats['browse_time']:.1f} 秒"
+        
+        logger.info(f"📊 统计信息: {stats_report}")
+        
         status_msg = f"✅每日登录成功: {USERNAME}"
         if browse_enabled:
-            status_msg += " + 浏览任务完成"
+            status_msg += f" + 浏览{self.stats.get('topics_read', 0)}个帖子"
+            status_msg += f" + 点赞{self.stats['successful_likes']}次"
+        
+        # 估算今日贡献
+        daily_contribution = self.stats['successful_likes'] * 10 + self.stats['scroll_actions'] * 2
+        status_msg += f"\n📈 预估贡献值: +{daily_contribution}"
 
         if GOTIFY_URL and GOTIFY_TOKEN:
             try:
