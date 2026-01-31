@@ -9,10 +9,6 @@ import time
 import functools
 import sys
 import re
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.header import Header
 from loguru import logger
 from DrissionPage import ChromiumOptions, Chromium
 from tabulate import tabulate
@@ -65,8 +61,6 @@ GOTIFY_TOKEN = os.environ.get("GOTIFY_TOKEN")  # Gotify 应用的 API Token
 SC3_PUSH_KEY = os.environ.get("SC3_PUSH_KEY")  # Server酱³ SendKey
 WXPUSH_URL = os.environ.get("WXPUSH_URL")  # wxpush 服务器地址
 WXPUSH_TOKEN = os.environ.get("WXPUSH_TOKEN")  # wxpush 的 token
-QQ_EMAIL = os.environ.get("QQ_EMAIL")  # 接收通知的QQ邮箱
-QQ_EMAIL_SMTP_PASSWORD = os.environ.get("QQ_EMAIL_SMTP_PASSWORD")  # QQ邮箱SMTP授权码
 
 HOME_URL = "https://linux.do/"
 LOGIN_URL = "https://linux.do/login"
@@ -92,16 +86,6 @@ class LinuxDoBrowser:
             .headless(True)
             .incognito(True)
             .set_argument("--no-sandbox")
-            .set_argument("--disable-dev-shm-usage")
-            .set_argument("--disable-gpu")
-            .set_argument("--disable-software-rasterizer")
-            .set_argument("--disable-background-timer-throttling")
-            .set_argument("--disable-backgrounding-occluded-windows")
-            .set_argument("--disable-renderer-backgrounding")
-            .set_argument("--disable-features=TranslateUI")
-            .set_argument("--disable-ipc-flooding-protection")
-            .set_argument("--disable-web-security")
-            .set_argument("--disable-features=VizDisplayCompositor")
         )
         co.set_user_agent(
             f"Mozilla/5.0 ({platformIdentifier}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -116,91 +100,22 @@ class LinuxDoBrowser:
                 "Accept-Language": "zh-CN,zh;q=0.9",
             }
         )
-        
-        # 添加统计变量
-        self.stats = {
-            'total_topics': 0,
-            'successful_likes': 0,
-            'failed_likes': 0,
-            'scroll_actions': 0,
-            'browse_time': 0
-        }
 
     def login(self):
         logger.info("开始登录")
-        
-        # 由于Cloudflare保护，直接使用DrissionPage进行完整登录流程
-        logger.info("使用DrissionPage进行完整登录流程...")
-        
-        try:
-            # 直接访问登录页面
-            logger.info("访问登录页面...")
-            self.page.get(LOGIN_URL)
-            time.sleep(3)
-            
-            # 等待页面加载完成，等待Cloudflare验证
-            logger.info("等待页面加载完成...")
-            time.sleep(5)
-            
-            # 查找用户名输入框
-            logger.info("查找登录表单...")
-            username_input = self.page.ele('#login-account-name', timeout=10)
-            if not username_input:
-                logger.error("未找到用户名输入框")
-                return False
-                
-            password_input = self.page.ele('#login-account-password', timeout=5)
-            if not password_input:
-                logger.error("未找到密码输入框")
-                return False
-            
-            # 输入用户名和密码
-            logger.info("输入登录信息...")
-            self.page.actions.click(username_input).input(USERNAME)
-            time.sleep(1)
-            self.page.actions.click(password_input).input(PASSWORD)
-            time.sleep(1)
-            
-            # 查找并点击登录按钮
-            login_button = self.page.ele('.btn.btn-primary.btn-large', timeout=5)
-            if not login_button:
-                # 尝试其他选择器
-                login_button = self.page.ele('button[type=submit]', timeout=5)
-                if not login_button:
-                    # 尝试通过文本查找
-                    login_button = self.page.ele('text=登录', timeout=5)
-            
-            if not login_button:
-                logger.error("未找到登录按钮")
-                return False
-            
-            logger.info("点击登录按钮...")
-            self.page.actions.click(login_button)
-            time.sleep(5)
-            
-            # 检查登录是否成功
-            logger.info("检查登录状态...")
-            self.page.get(HOME_URL)
-            time.sleep(3)
-            
-            # 检查是否登录成功
-            user_ele = self.page.ele("@id=current-user", timeout=10)
-            if user_ele:
-                logger.info("✅ 登录成功!")
-                return True
-            else:
-                # 检查是否有avatar元素
-                if "avatar" in self.page.html:
-                    logger.info("✅ 登录成功 (通过avatar检测)")
-                    return True
-                else:
-                    logger.error("❌ 登录失败 - 未找到用户元素")
-                    logger.info(f"当前URL: {self.page.url}")
-                    return False
-                    
-        except Exception as e:
-            logger.error(f"登录过程中出错: {str(e)}")
-            return False
+        # Step 1: Get CSRF Token
+        logger.info("获取 CSRF token...")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": LOGIN_URL,
+        }
+        resp_csrf = self.session.get(CSRF_URL, headers=headers, impersonate="chrome136")
+        csrf_data = resp_csrf.json()
+        csrf_token = csrf_data.get("csrf")
+        logger.info(f"CSRF Token obtained: {csrf_token[:10]}...")
 
         # Step 2: Login
         logger.info("正在登录...")
@@ -221,7 +136,7 @@ class LinuxDoBrowser:
 
         try:
             resp_login = self.session.post(
-                SESSION_URL, data=data, impersonate="chrome120", headers=headers
+                SESSION_URL, data=data, impersonate="chrome136", headers=headers
             )
 
             if resp_login.status_code == 200:
@@ -291,41 +206,9 @@ class LinuxDoBrowser:
         if not topic_list:
             logger.error("未找到主题帖")
             return False
-        
-        # 在CI环境中减少阅读数量，优化执行时间
-        available_count = len(topic_list)
-        self.stats['total_topics'] = available_count
-        
-        # CI环境下的阅读策略：大幅减少阅读数量
-        if available_count <= 10:
-            target_count = random.randint(2, min(available_count, 5))
-        elif available_count <= 20:
-            target_count = random.randint(3, 8)
-        else:
-            target_count = random.randint(5, 12)  # 最多阅读12个帖子
-        
-        logger.info(f"发现 {available_count} 个主题帖，随机选择 {target_count} 个进行阅读")
-        selected_topics = random.sample(topic_list, target_count)
-        
-        # 记录实际阅读数量
-        self.stats['topics_read'] = target_count
-        
-        # 分批处理，避免同时打开太多标签页
-        batch_size = 10
-        for i in range(0, len(selected_topics), batch_size):
-            batch = selected_topics[i:i + batch_size]
-            logger.info(f"处理第 {i//batch_size + 1} 批，共 {len(batch)} 个帖子")
-            
-            for topic in batch:
-                self.click_one_topic(topic.attr("href"))
-            
-            # 每批之间短暂休息，模拟真实用户行为
-            if i + batch_size < len(selected_topics):
-                rest_time = random.uniform(5, 15)
-                logger.info(f"批次间休息 {rest_time:.1f} 秒...")
-                time.sleep(rest_time)
-        
-        logger.info(f"✅ 本轮完成阅读 {target_count} 个帖子")
+        logger.info(f"发现 {len(topic_list)} 个主题帖，随机选择10个")
+        for topic in random.sample(topic_list, 10):
+            self.click_one_topic(topic.attr("href"))
         return True
 
     @retry_decorator()
@@ -333,17 +216,8 @@ class LinuxDoBrowser:
         new_page = self.browser.new_tab()
         try:
             new_page.get(topic_url)
-            
-            # 增加点赞概率，提升到40-60%
-            like_probability = random.uniform(0.4, 0.6)
-            if random.random() < like_probability:
+            if random.random() < 0.3:  # 0.3 * 30 = 9
                 self.click_like(new_page)
-            
-            # 30%的概率进行多次点赞（如果有多个可点赞的内容）
-            if random.random() < 0.3:
-                time.sleep(random.uniform(2, 4))
-                self.click_like(new_page)
-            
             self.browse_post(new_page)
         finally:
             try:
@@ -353,49 +227,21 @@ class LinuxDoBrowser:
 
     def browse_post(self, page):
         prev_url = None
-        scroll_count = 0
-        
-        # 在CI环境中使用更快速的浏览策略
-        max_scrolls = random.randint(5, 10)  # 减少到5-10次滚动
-        
-        # 随机决定浏览策略 - 优化为CI环境友好
-        browse_strategy = random.choice(['quick', 'fast'])
-        if browse_strategy == 'quick':
-            max_scrolls = random.randint(3, 6)
-            wait_range = (0.5, 1.5)
-        else:  # fast
-            max_scrolls = random.randint(5, 10)
-            wait_range = (1, 2)
-        
-        logger.info(f"浏览策略: {browse_strategy}, 最大滚动次数: {max_scrolls}")
-        
-        for scroll_count in range(max_scrolls):
-            # 更大的滚动距离范围，模拟不同浏览速度
-            if browse_strategy == 'quick':
-                scroll_distance = random.randint(800, 1200)
-            elif browse_strategy == 'normal':
-                scroll_distance = random.randint(550, 650)
-            else:  # deep
-                scroll_distance = random.randint(300, 500)
-            
+        # 开始自动滚动，最多滚动10次
+        for _ in range(10):
+            # 随机滚动一段距离
+            scroll_distance = random.randint(550, 650)  # 随机滚动 550-650 像素
             logger.info(f"向下滚动 {scroll_distance} 像素...")
             page.run_js(f"window.scrollBy(0, {scroll_distance})")
-            
-            # 随机向上滚动一下，模拟回看内容
-            if scroll_count > 3 and random.random() < 0.15:
-                up_scroll = random.randint(-200, -100)
-                page.run_js(f"window.scrollBy(0, {up_scroll})")
-                logger.info(f"向上滚动 {abs(up_scroll)} 像素，回看内容")
+            logger.info(f"已加载页面: {page.url}")
 
-            # 降低早期退出概率，让浏览更充分
-            early_exit_prob = 0.01 if browse_strategy == 'deep' else (0.02 if browse_strategy == 'normal' else 0.03)
-            if random.random() < early_exit_prob:
+            if random.random() < 0.03:  # 33 * 4 = 132
                 logger.success("随机退出浏览")
                 break
 
             # 检查是否到达页面底部
             at_bottom = page.run_js(
-                "window.scrollY + window.innerHeight >= document.body.scrollHeight - 100"
+                "window.scrollY + window.innerHeight >= document.body.scrollHeight"
             )
             current_url = page.url
             if current_url != prev_url:
@@ -404,62 +250,25 @@ class LinuxDoBrowser:
                 logger.success("已到达页面底部，退出浏览")
                 break
 
-            # 根据策略调整等待时间
-            wait_time = random.uniform(*wait_range)
-            self.stats['scroll_actions'] += 1
-            self.stats['browse_time'] += wait_time
-            
+            # 动态随机等待
+            wait_time = random.uniform(2, 4)  # 随机等待 2-4 秒
             logger.info(f"等待 {wait_time:.2f} 秒...")
             time.sleep(wait_time)
-            
-            # 偶尔模拟点击相关链接或展开内容
-            if scroll_count > 5 and random.random() < 0.1:
-                try:
-                    # 尝试点击一些展开链接
-                    expand_links = page.eles("text=展开", timeout=2)
-                    if expand_links:
-                        random.choice(expand_links).click()
-                        logger.info("点击展开链接")
-                        self.stats['browse_time'] += random.uniform(1, 2)
-                        time.sleep(random.uniform(1, 2))
-                except:
-                    pass
-        
-        logger.info(f"帖子浏览完成，共滚动 {scroll_count + 1} 次")
-        self.stats['scroll_actions'] += scroll_count + 1
 
     def run(self):
-        import time
-        start_time = time.time()
-        
         try:
-            logger.info("🚀 开始执行签到任务")
             login_res = self.login()
-            if not login_res:
-                logger.error("❌ 登录失败，跳过浏览任务")
-                self.send_notifications(False)  # 发送失败通知
-                return
+            if not login_res:  # 登录
+                logger.warning("登录验证失败")
 
             if BROWSE_ENABLED:
-                browse_start = time.time()
                 click_topic_res = self.click_topic()  # 点击主题
-                browse_time = time.time() - browse_start
-                logger.info(f"⏱️ 浏览耗时: {browse_time:.1f} 秒")
-                
                 if not click_topic_res:
-                    logger.warning("浏览任务失败，但签到已完成")
-                else:
-                    logger.info("✅ 完成浏览任务")
+                    logger.error("点击主题失败，程序终止")
+                    return
+                logger.info("完成浏览任务")
 
-            self.send_notifications(BROWSE_ENABLED and login_res)  # 发送通知
-            
-            total_time = time.time() - start_time
-            logger.info(f"🏁 总执行时间: {total_time:.1f} 秒")
-            
-        except Exception as e:
-            logger.error(f"❌ 执行过程中出错: {str(e)}")
-            self.send_notifications(False)  # 发送失败通知
-            raise
+            self.send_notifications(BROWSE_ENABLED)  # 发送通知
         finally:
             try:
                 self.page.close()
@@ -477,14 +286,11 @@ class LinuxDoBrowser:
             if like_button:
                 logger.info("找到未点赞的帖子，准备点赞")
                 like_button.click()
-                self.stats['successful_likes'] += 1
                 logger.info("点赞成功")
                 time.sleep(random.uniform(1, 2))
             else:
                 logger.info("帖子可能已经点过赞了")
-                self.stats['successful_likes'] += 1  # 也算成功，因为已经点赞
         except Exception as e:
-            self.stats['failed_likes'] += 1
             logger.error(f"点赞失败: {str(e)}")
 
     def print_connect_info(self):
@@ -493,7 +299,7 @@ class LinuxDoBrowser:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         }
         resp = self.session.get(
-            "https://connect.linux.do/", headers=headers, impersonate="chrome120"
+            "https://connect.linux.do/", headers=headers, impersonate="chrome136"
         )
         soup = BeautifulSoup(resp.text, "html.parser")
         rows = soup.select("table tr")
@@ -511,24 +317,9 @@ class LinuxDoBrowser:
         print(tabulate(info, headers=["项目", "当前", "要求"], tablefmt="pretty"))
 
     def send_notifications(self, browse_enabled):
-        # 生成统计报告
-        stats_report = f"\n📊 本次执行统计:\n"
-        stats_report += f"📝 发现主题: {self.stats['total_topics']} 个\n"
-        stats_report += f"👍 成功点赞: {self.stats['successful_likes']} 次\n"
-        stats_report += f"❌ 点赞失败: {self.stats['failed_likes']} 次\n"
-        stats_report += f"📜 滚动操作: {self.stats['scroll_actions']} 次\n"
-        stats_report += f"⏱️ 浏览时长: {self.stats['browse_time']:.1f} 秒"
-        
-        logger.info(f"📊 统计信息: {stats_report}")
-        
         status_msg = f"✅每日登录成功: {USERNAME}"
         if browse_enabled:
-            status_msg += f" + 浏览{self.stats.get('topics_read', 0)}个帖子"
-            status_msg += f" + 点赞{self.stats['successful_likes']}次"
-        
-        # 估算今日贡献
-        daily_contribution = self.stats['successful_likes'] * 10 + self.stats['scroll_actions'] * 2
-        status_msg += f"\n📈 预估贡献值: +{daily_contribution}"
+            status_msg += " + 浏览任务完成"
 
         if GOTIFY_URL and GOTIFY_TOKEN:
             try:
@@ -588,93 +379,6 @@ class LinuxDoBrowser:
                 logger.error(f"wxpush 推送失败: {str(e)}")
         else:
             logger.info("未配置 WXPUSH_URL 或 WXPUSH_TOKEN，跳过通知发送")
-
-        if QQ_EMAIL and QQ_EMAIL_SMTP_PASSWORD:
-            try:
-                self.send_qq_email(status_msg, stats_report)
-            except Exception as e:
-                logger.error(f"QQ邮件发送失败: {str(e)}")
-        else:
-            logger.info("未配置 QQ_EMAIL 或 QQ_EMAIL_SMTP_PASSWORD，跳过邮件通知")
-
-    def send_qq_email(self, status_msg, stats_report):
-        """发送QQ邮件通知"""
-        try:
-            # 邮件内容
-            subject = f"Linux.Do 自动签到报告 - {time.strftime('%Y-%m-%d %H:%M:%S')}"
-            
-            # 构建HTML邮件内容
-            html_content = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: 'Microsoft YaHei', Arial, sans-serif; line-height: 1.6; }}
-                    .header {{ background: #4CAF50; color: white; padding: 20px; text-align: center; }}
-                    .content {{ padding: 20px; }}
-                    .stats {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0; }}
-                    .success {{ color: #4CAF50; }}
-                    .info {{ color: #2196F3; }}
-                    .footer {{ text-align: center; color: #666; padding: 20px; font-size: 12px; }}
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h1>🤖 Linux.Do 自动签到报告</h1>
-                    <p>{time.strftime('%Y年%m月%d日 %H:%M')}</p>
-                </div>
-                
-                <div class="content">
-                    <h2 class="success">✅ 执行状态</h2>
-                    <p><strong>{status_msg}</strong></p>
-                    
-                    <h2 class="info">📊 详细统计</h2>
-                    <div class="stats">
-                        <pre>{stats_report}</pre>
-                    </div>
-                    
-                    <h2>🔧 系统信息</h2>
-                    <ul>
-                        <li>用户名: {USERNAME}</li>
-                        <li>执行时间: {time.strftime('%Y-%m-%d %H:%M:%S')}</li>
-                        <li>浏览器: Chrome Headless</li>
-                        <li>平台: Linux (GitHub Actions)</li>
-                    </ul>
-                </div>
-                
-                <div class="footer">
-                    <p>📧 本邮件由 Linux.Do 自动签到脚本发送</p>
-                    <p>⏰ 下次执行时间: 随机时间段</p>
-                </div>
-            </body>
-            </html>
-            """
-            
-            # 创建邮件对象
-            msg = MIMEMultipart('alternative')
-            msg['From'] = Header(f"Linux.Do签到机器人 <{QQ_EMAIL.split('@')[0]}@qq.com>")
-            msg['To'] = Header(f"用户 <{QQ_EMAIL}>")
-            msg['Subject'] = Header(subject, 'utf-8')
-            
-            # 添加HTML内容
-            html_part = MIMEText(html_content, 'html', 'utf-8')
-            msg.attach(html_part)
-            
-            # 连接QQ邮箱SMTP服务器
-            smtp = smtplib.SMTP_SSL('smtp.qq.com', 465)
-            smtp.set_debuglevel(0)  # 设置为1可查看SMTP交互日志
-            
-            # 登录SMTP服务器
-            smtp.login(QQ_EMAIL.split('@')[0] + '@qq.com', QQ_EMAIL_SMTP_PASSWORD)
-            
-            # 发送邮件
-            smtp.sendmail(QQ_EMAIL, QQ_EMAIL, msg.as_string())
-            smtp.quit()
-            
-            logger.success("QQ邮件发送成功!")
-            
-        except Exception as e:
-            logger.error(f"发送QQ邮件时出错: {str(e)}")
-            raise
 
 
 if __name__ == "__main__":
