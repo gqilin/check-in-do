@@ -137,7 +137,7 @@ class LinuxDoBrowser:
             "X-Requested-With": "XMLHttpRequest",
             "Referer": LOGIN_URL,
         }
-        resp_csrf = self.session.get(CSRF_URL, headers=headers, impersonate="chrome136")
+        resp_csrf = self.session.get(CSRF_URL, headers=headers, impersonate="chrome120")
         csrf_data = resp_csrf.json()
         csrf_token = csrf_data.get("csrf")
         logger.info(f"CSRF Token obtained: {csrf_token[:10]}...")
@@ -161,7 +161,7 @@ class LinuxDoBrowser:
 
         try:
             resp_login = self.session.post(
-                SESSION_URL, data=data, impersonate="chrome136", headers=headers
+                SESSION_URL, data=data, impersonate="chrome120", headers=headers
             )
 
             if resp_login.status_code == 200:
@@ -430,7 +430,7 @@ class LinuxDoBrowser:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         }
         resp = self.session.get(
-            "https://connect.linux.do/", headers=headers, impersonate="chrome136"
+            "https://connect.linux.do/", headers=headers, impersonate="chrome120"
         )
         soup = BeautifulSoup(resp.text, "html.parser")
         rows = soup.select("table tr")
